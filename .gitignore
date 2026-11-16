@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+.vscode/
+mind_card_backup.json
+#bio.txt
