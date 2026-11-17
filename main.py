@@ -9,7 +9,11 @@ app = FastAPI(title="Mind Card Notes Web")
 templates = Jinja2Templates(directory="templates")
 repo = NoteRepository()
 
-BIO_FILE = "bio.txt"
+#BIO_FILE = "bio.txt"
+DATA_DIR = "data"
+os.makedirs(DATA_DIR, exist_ok=True)
+
+BIO_FILE = os.path.join(DATA_DIR, "bio.txt")
 
 
 def get_bio() -> str:

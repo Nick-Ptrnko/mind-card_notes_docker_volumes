@@ -1,9 +1,14 @@
 import json
+import os
 from repository import NoteRepository
 
+DATA_DIR = "data"
+os.makedirs(DATA_DIR, exist_ok=True)
+DEFAULT_BACKUP_FILE = os.path.join(DATA_DIR, "mind_card_backup.json")
 
 def export_notes_to_json(
-    repo: NoteRepository, filename: str = "mind_card_backup.json"
+    repo: NoteRepository, filename: str = DEFAULT_BACKUP_FILE
+#repo: NoteRepository, filename: str = "mind_card_backup.json"
 ) -> int:
     """Експортує всі нотатки з бази у JSON-файл.
 
@@ -29,7 +34,8 @@ def export_notes_to_json(
 
 
 def import_notes_from_json(
-    repo: NoteRepository, filename: str = "mind_card_backup.json"
+    repo: NoteRepository, filename: str = DEFAULT_BACKUP_FILE
+#    repo: NoteRepository, filename: str = "mind_card_backup.json"
 ) -> int:
     """Відновлює нотатки з JSON-файлу в базу даних.
 

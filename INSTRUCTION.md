@@ -1,121 +1,91 @@
-# Deployment Instructions
+# Mind Card Notes - Deployment Instructions
 
-This guide covers two ways to deploy and run **Mind Card Notes**:
-1. [Local Deployment in `.venv` (Linux)](#1-local-deployment-in-venv-linux)
-2. [Docker Deployment](#2-docker-deployment)
+This guide provides step-by-step instructions for containerizing and deploying the Mind Card Notes application using Docker without Docker Compose.
 
 ---
 
-## 1. Local Deployment in `.venv` (Linux)
-
-Follow these steps to run the application directly on a Linux host using a Python virtual environment.
-
-### Step 1.1: Create and Activate a Virtual Environment
-
-Navigate to the project root directory and create a virtual environment named `.venv`:
-
+### Step 1: Create a Docker Network
+Create a custom Docker network so the application container can communicate with the database container:
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+docker network create mind-cards-net
 ```
-
-### Step 1.2: Install Dependencies
-
-Install the required packages from `requirements.txt`:
-
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### Step 1.3: Configure Environment Variables
-
-Create or update your `.env` file in the root directory with your local MySQL credentials:
-
-```env
-DB_HOST=127.0.0.1
-DB_USER=your_mysql_user
-DB_PASSWORD=your_mysql_password
-DB_NAME=your_database_name
-```
-
-### Step 1.4: Start the FastAPI Application
-
-Launch the development server bound to your WireGuard VPN interface IP:
-
-```bash
-fastapi dev main.py --host 10.0.0.1
-```
-
-> **Note:** `10.0.0.1` is the server's IP address within the **WireGuard VPN** network, allowing you to securely access your notes from any connected device at `http://10.0.0.1:8000`.
 
 ---
 
-## 2. Docker Deployment
-
-This section explains how to build the Docker image for **Mind Card Notes**, configure your host's local MySQL server to accept connections from the container, and launch the application.
-
-### Step 2.1: Build the Docker Image
-
-Run the following command in the root directory of the project (where the `Dockerfile` is located) to build the image:
-
-```bash
-docker build -t mind-card_notes .
-```
-
-### Step 2.2: Configure Local MySQL for Docker Access
-
-Since the application runs inside a Docker container and connects to a MySQL database hosted directly on your machine, you need to ensure MySQL listens to connections from the Docker network interface.
-
-1. **Check Your Host's Docker IP Address:**
-   Find the IP address assigned to the `docker0` network interface on your host machine:
-   ```bash
-   ip a | grep docker
-   ```
-   *(Typically, this IP address is `172.17.0.1`.)*
-
-2. **Check Current MySQL `bind-address`:**
-   Verify which IP addresses your local MySQL server is currently listening on:
-   ```bash
-   mysql -u mysqluser -p -e "SHOW VARIABLES LIKE 'bind_address';"
-   ```
-
-3. **Update MySQL Configuration:**
-   If `bind_address` is set to `127.0.0.1`, the container will not be able to reach the database. Open the MySQL configuration file:
-   ```bash
-   sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
-   ```
-   Locate the `[mysqld]` section and set `bind-address` to `0.0.0.0` (to listen on all interfaces) or specifically to your Docker bridge IP:
-   ```ini
-   [mysqld]
-   bind-address = 0.0.0.0
-   ```
-   Save the file and restart the MySQL service to apply the changes:
-   ```bash
-   sudo systemctl restart mysql
-   ```
-
-### Step 2.3: Configure Environment Variables for Docker
-
-Update your `.env` file so the containerized application knows where to find the MySQL database on the host machine. Set `DB_HOST` to the Docker network IP found in **Step 2.2**:
-
-```env
-DB_HOST=172.17.0.1
-DB_USER=your_mysql_user
-DB_PASSWORD=your_mysql_password
-DB_NAME=your_database_name
-```
-
-### Step 2.4: Run the Docker Container
-
-Start the container in detached mode (`-d`), mapping port `8000` and passing your `.env` file:
-
+### Step 2: Create and Start the MySQL Database Container
+Run the MySQL container with an isolated volume, setting up the required environment variables and attaching it to the network:
 ```bash
 docker run -d \
-  -p 8000:8000 \
-  --env-file .env \
-  --name mind-notes-app \
-  mind-card_notes:latest
+  --name mind_card_db \
+  --network mind-cards-net \
+  -e MYSQL_ROOT_PASSWORD=root_secure_password \
+  -e MYSQL_DATABASE=mind_card_notes \
+  -e MYSQL_USER=mysqluser \
+  -e MYSQL_PASSWORD=0704 \
+  -v mysql_data:/var/lib/mysql \
+  mysql:8.0
 ```
 
-Once started, the web application will be accessible at `http://localhost:8000` (or via your WireGuard VPN IP).
+---
+
+### Step 3: Application Code Updates for File Storage
+The application code has been updated so that file system interactions (such as `bio.txt` and `mind_card_backup.json`) are isolated inside a dedicated `data/` directory.
+
+---
+
+### Step 4: Build and Push Docker Images
+Build the updated Docker image with multiple tags and push them to Docker Hub:
+```bash
+docker build -t nickptrnko/mind-card_notes:latest -t nickptrnko/mind-card_notes:1.2 .
+docker push nickptrnko/mind-card_notes:latest
+docker push nickptrnko/mind-card_notes:1.2
+```
+
+---
+
+### Step 5: Configure Environment Variables
+Ensure your `.env` file (located in the `data/` directory or project root) points the database host to the MySQL container name:
+```env
+DB_HOST=mind_card_db
+DB_USER=mysqluser
+DB_PASSWORD=0704
+DB_NAME=mind_card_notes
+```
+
+---
+
+### Step 6: Run the Application Container
+Start the application container by mounting the local `data/` folder, connecting the environment file, and linking it to the Docker network:
+```bash
+docker run -d -p 8000:8000 \
+  --env-file data/.env \
+  -v $(pwd)/data:/app/data \
+  --name mind-cards-app \
+  --network mind-cards-net \
+  nickptrnko/mind-card_notes:latest
+```
+
+---
+
+### Step 7: Migrate Data from Local Host to Containerized MySQL
+If you have an existing database on your local host, you can transfer it to the container:
+
+1. **Export a backup (dump) on your host machine:**
+   ```bash
+   mysqldump -u mysqluser -p mind_card_notes > mind_card_backup.sql
+   ```
+
+2. **Copy the backup file into the MySQL container:**
+   ```bash
+   docker cp mind_card_backup.sql mind_card_db:/tmp/mind_card_backup.sql
+   ```
+
+3. **Import the data inside the container:**
+   ```bash
+   docker exec -it mind_card_db mysql -u mysqluser -p mind_card_notes
+   ```
+   *Inside the MySQL shell, run:*
+   ```sql
+   source /tmp/mind_card_backup.sql;
+   EXIT;
+   ```
